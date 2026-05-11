@@ -1,0 +1,19 @@
+{
+  "project_info": {
+    "project_number": "460918627115",
+    "project_id": "complisight-uat",
+    "storage_bucket": "complisight-uat.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:460918627115:android:20670728b8e4bf9b5f436e",
+        "android_client_info": { "package_name": "com.driving_school.app" }
+      },
+      "oauth_client": [],
+      "api_key": [{ "current_key": "AIzaSyBPZ--b49jYqyn0PdP606x64OsBNDe1t24" }],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+    }
+  ],
+  "configuration_version": "1"
+}
