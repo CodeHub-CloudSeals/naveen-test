@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import LoginScreen from './src/screens/LoginScreen';
 import PaymentScreen from './src/screens/PaymentScreen';
-import SuperAdminScreen from './src/screens/SuperAdminScreen';
 import SchoolScreen from './src/screens/SchoolScreen';
 import DriverScreen from './src/screens/DriverScreen';
 import StudentScreen from './src/screens/StudentScreen';
@@ -28,8 +27,8 @@ function AppContent() {
   // School owner must select a subscription plan first
   if (user.key === 'school' && !user.subscriptionPlan) return <PaymentScreen />;
 
-  // schoolId filter: superadmin sees all, others see their school only
-  const schoolId = user.key === 'superadmin' ? null : (user.schoolId || undefined);
+  // schoolId filter: others see their school only
+  const schoolId = user.schoolId || undefined;
 
   return (
     <DataProvider schoolId={schoolId}>
@@ -40,7 +39,6 @@ function AppContent() {
 
 function AppNavigator({ user }) {
   try {
-    if (user.key === 'superadmin') return <SuperAdminScreen />;
     if (user.key === 'school')     return <SchoolScreen />;
     if (user.key === 'driver')     return <DriverScreen />;
     if (user.key === 'student')    return <StudentScreen />;

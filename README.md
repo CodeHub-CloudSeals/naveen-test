@@ -27,12 +27,11 @@ App automatically:
 ## How It Works
 - Data → Firebase Firestore (real-time sync)
 - Offline → Falls back to demo data
-- All 4 roles work without login/auth
+- All 3 roles work without login/auth
 
 ## Roles (Tap to enter)
 | Role | Access |
 |------|--------|
-| 👑 Super Admin | All schools, revenue |
 | 🏫 School Owner | Students, fees, staff, add |
 | 🧑‍🏫 Instructor | Schedule, fees view, add student |
 | 🎓 Student | Own progress, fees, license |
