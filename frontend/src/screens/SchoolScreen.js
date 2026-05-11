@@ -15,10 +15,11 @@ export default function SchoolScreen() {
   const [tab, setTab] = useState('home');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [admTypeFilter, setAdmTypeFilter] = useState('all');
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [payModal, setPayModal] = useState(null);
   const [payAmt, setPayAmt] = useState('');
-  const [form, setForm] = useState({ name: '', rel: '', phone: '', dob: '', gender: 'M', cardNo: '', addr: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', ll: '', lle: '', dl: '', test: '', tot: '', paid: '' });
+  const [form, setForm] = useState({ name: '', rel: '', phone: '', dob: '', gender: 'M', cardNo: '', addr: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', ll: '', lle: '', dl: '', test: '', tot: '', paid: '', admType: 'both' });
   const [faceDesc, setFaceDesc] = useState(null);
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [showFaceScan, setShowFaceScan] = useState(false);
@@ -40,6 +41,9 @@ export default function SchoolScreen() {
   let filtered = students.filter(s => s.name?.toLowerCase().includes(search.toLowerCase()) || s.phone?.includes(search));
   if (filter === 'balance') filtered = filtered.filter(s => s.paid < s.tot);
   if (filter === 'complete') filtered = filtered.filter(s => s.cls >= TC);
+  if (admTypeFilter !== 'all') {
+    filtered = filtered.filter(s => s.admType === admTypeFilter || (!s.admType && admTypeFilter === 'both'));
+  }
 
   const handleAdd = async () => {
     if (!form.name || !form.phone || !form.adm || !form.tot) {
@@ -53,7 +57,7 @@ export default function SchoolScreen() {
       });
       addStudent({ ...form, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, schoolId: user?.schoolId });
       Alert.alert('Success ✅', `${form.name} registered!\nLogin phone: ${form.phone}`);
-      setForm({ name: '', rel: '', phone: '', dob: '', gender: 'M', cardNo: '', addr: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', ll: '', lle: '', dl: '', test: '', tot: '', paid: '' });
+      setForm({ name: '', rel: '', phone: '', dob: '', gender: 'M', cardNo: '', addr: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', ll: '', lle: '', dl: '', test: '', tot: '', paid: '', admType: 'both' });
       setFaceDesc(null);
       setTab('students');
     } catch (e) {
@@ -84,7 +88,10 @@ export default function SchoolScreen() {
     finally { setAddingDriver(false); }
   };
 
-  const TABS = [['home', '🏠', 'Home'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['fees', '💰', 'Fees'], ['staff', '🧑‍🏫', 'Staff'], ['add', '➕', 'Add']];
+  const TABS = [['home', '🏠', 'Home'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['licenses', '🪪', 'Licenses'], ['fees', '💰', 'Fees'], ['staff', '🧑‍🏫', 'Staff'], ['add', '➕', 'Add']];
+
+  const llrStudents = students.filter(st => st.ll && st.ll.trim() !== '');
+  const dlStudents = students.filter(st => st.dl && st.dl.trim() !== '');
 
   return (
     <View style={s.container}>
@@ -201,6 +208,16 @@ export default function SchoolScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <View style={s.chips}>
+              {[['all', 'All Types'], ['driving', 'Driving Only'], ['license', 'License Only'], ['both', 'Both']].map(([f, l]) => {
+                const count = students.filter(s => f === 'all' || s.admType === f || (!s.admType && f === 'both')).length;
+                return (
+                  <TouchableOpacity key={f} style={[s.chip, admTypeFilter === f && s.chipActive]} onPress={() => setAdmTypeFilter(f)}>
+                    <Text style={[s.chipT, admTypeFilter === f && s.chipActiveT]}>{l} ({count})</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             {filtered.map(st => {
               const b = st.tot - st.paid, pct = Math.round(st.cls / TC * 100);
               return (
@@ -231,6 +248,49 @@ export default function SchoolScreen() {
               );
             })}
             {filtered.length === 0 && <View style={s.card}><Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 20 }}>No students found</Text></View>}
+          </View>
+        )}
+
+        {/* LICENSES */}
+        {tab === 'licenses' && (
+          <View>
+            <View style={s.statsGrid}>
+              <View style={s.stat}><Text style={s.statV}>{llrStudents.length}</Text><Text style={s.statL}>LLR Issued</Text></View>
+              <View style={s.stat}><Text style={s.statV}>{dlStudents.length}</Text><Text style={s.statL}>DL Issued</Text></View>
+            </View>
+
+            <Text style={s.sec}>📝 LLR Issued List</Text>
+            <View style={s.card}>
+              {llrStudents.map(st => (
+                <View key={st.id} style={s.slotRow}>
+                  <View style={s.la}><Text style={{ color: '#fff', fontWeight: '900' }}>{st.name?.[0] || '?'}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.slotName}>{st.name}</Text>
+                    <Text style={s.slotSub}>📱 {st.phone}</Text>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#0f172a' }}>LL No: {st.ll}</Text>
+                      <Text style={{ fontSize: 11, color: '#ef4444' }}>Exp: {st.lle || '—'}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+              {llrStudents.length === 0 && <Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 10 }}>No LLRs issued yet</Text>}
+            </View>
+
+            <Text style={s.sec}>🪪 Driving License (DL) List</Text>
+            <View style={s.card}>
+              {dlStudents.map(st => (
+                <View key={st.id} style={s.slotRow}>
+                  <View style={[s.la, { backgroundColor: '#10b981' }]}><Text style={{ color: '#fff', fontWeight: '900' }}>{st.name?.[0] || '?'}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.slotName}>{st.name}</Text>
+                    <Text style={s.slotSub}>📱 {st.phone}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#0f172a', marginTop: 4 }}>DL No: {st.dl}</Text>
+                  </View>
+                </View>
+              ))}
+              {dlStudents.length === 0 && <Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 10 }}>No DLs issued yet</Text>}
+            </View>
           </View>
         )}
 
@@ -318,6 +378,16 @@ export default function SchoolScreen() {
                   <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 4 }}>Required for attendance</Text>
                 </TouchableOpacity>
               )}
+            </View>
+
+            {/* Admission Type Selection */}
+            <Text style={s.flbl}>Admission Type *</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {[['driving', 'Driving Only'], ['license', 'License Only'], ['both', 'Both']].map(([k, l]) => (
+                <TouchableOpacity key={k} style={[s.chip, form.admType === k && s.chipActive, { flex: 1, alignItems: 'center' }]} onPress={() => setForm({ ...form, admType: k })}>
+                  <Text style={[s.chipT, form.admType === k && s.chipActiveT]}>{l}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             {[['name', 'Full Name *', 'default'], ['phone', 'Phone * (Used for login)', 'numeric'], ['rel', 'S/o D/o W/o', 'default'], ['addr', 'Address', 'default'], ['adm', 'Admission Date (YYYY-MM-DD)', 'default'], ['cardNo', 'Card No.', 'default'], ['tot', 'Total Fee ₹ *', 'numeric'], ['paid', 'Fee Paid ₹', 'numeric'], ['ll', 'LL Number', 'default'], ['lle', 'LL Expiry (YYYY-MM-DD)', 'default'], ['dl', 'DL Number', 'default']].map(([k, ph, kb]) => (

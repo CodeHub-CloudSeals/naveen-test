@@ -10,7 +10,8 @@ export default function DriverScreen() {
   const { logout, user } = useAuth();
   const { students, markClass, addStudent } = useData();
   const [tab, setTab] = useState('schedule');
-  const [form, setForm] = useState({ name: '', phone: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', tot: '', paid: '' });
+  const [admTypeFilter, setAdmTypeFilter] = useState('all');
+  const [form, setForm] = useState({ name: '', phone: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', tot: '', paid: '', ll: '', lle: '', dl: '', admType: 'both' });
   const [faceDesc, setFaceDesc] = useState(null);
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [showFaceScan, setShowFaceScan] = useState(false);
@@ -20,7 +21,7 @@ export default function DriverScreen() {
     if (!faceDesc) { Alert.alert('Face Required', 'Please capture student face (press 📷 Capture Face)'); return; }
     addStudent({ ...form, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc });
     Alert.alert('Success', form.name + ' registered with face!');
-    setForm({ name: '', phone: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', tot: '', paid: '' });
+    setForm({ name: '', phone: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', tot: '', paid: '', ll: '', lle: '', dl: '', admType: 'both' });
     setFaceDesc(null);
     setTab('students');
   };
@@ -31,7 +32,10 @@ export default function DriverScreen() {
     Alert.alert('Attendance Marked! ✅', `${student.name}\nClass ${student.cls + 1} / 26 marked`);
   };
 
-  const TABS = [['schedule', '📅', 'Schedule'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['fees', '💰', 'Fees'], ['add', '➕', 'Add']];
+  const TABS = [['schedule', '📅', 'Schedule'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['licenses', '🪪', 'Licenses'], ['fees', '💰', 'Fees'], ['add', '➕', 'Add']];
+
+  const llrStudents = students.filter(st => st.ll && st.ll.trim() !== '');
+  const dlStudents = students.filter(st => st.dl && st.dl.trim() !== '');
 
   return (
     <View style={s.container}>
@@ -123,14 +127,26 @@ export default function DriverScreen() {
         )}
 
         {/* STUDENTS */}
-        {tab === 'students' && (
+        {tab === 'students' && (() => {
+          const filteredStudents = students.filter(s => admTypeFilter === 'all' || s.admType === admTypeFilter || (!s.admType && admTypeFilter === 'both'));
+          return (
           <View>
             <Text style={s.sec}>👥 My Students</Text>
-            {students.length === 0 ? (
-              <View style={s.card}><Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 20 }}>No students</Text></View>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+              {[['all', 'All Types'], ['driving', 'Driving Only'], ['license', 'License Only'], ['both', 'Both']].map(([f, l]) => {
+                const count = students.filter(s => f === 'all' || s.admType === f || (!s.admType && f === 'both')).length;
+                return (
+                  <TouchableOpacity key={f} style={[s.chip, admTypeFilter === f && s.chipActive]} onPress={() => setAdmTypeFilter(f)}>
+                    <Text style={[s.chipT, admTypeFilter === f && s.chipActiveT]}>{l} ({count})</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {filteredStudents.length === 0 ? (
+              <View style={s.card}><Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 20 }}>No students found</Text></View>
             ) : (
               <View style={s.card}>
-                {students.map(st => (
+                {filteredStudents.map(st => (
                   <View key={st.id} style={s.li}>
                     <View style={s.la}><Text style={{ color: '#fff', fontWeight: '900' }}>{st.name?.[0] || '?'}</Text></View>
                     <View style={{ flex: 1 }}>
@@ -148,7 +164,8 @@ export default function DriverScreen() {
               </View>
             )}
           </View>
-        )}
+          );
+        })()}
 
         {/* FEES */}
         {tab === 'fees' && (
@@ -172,6 +189,43 @@ export default function DriverScreen() {
               <TouchableOpacity onPress={() => Linking.openURL('tel:9000300256')}>
                 <Text style={{ fontSize: 16, fontWeight: '900', color: '#0f2044', marginTop: 4 }}>📞 9000 300 256</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* LICENSES */}
+        {tab === 'licenses' && (
+          <View>
+            <View style={s.statsGrid}>
+              <View style={s.stat}><Text style={s.statV}>{llrStudents.length}</Text><Text style={s.statL}>LLR Issued</Text></View>
+              <View style={s.stat}><Text style={s.statV}>{dlStudents.length}</Text><Text style={s.statL}>DL Issued</Text></View>
+            </View>
+
+            <Text style={s.sec}>📝 LLR Issued List</Text>
+            <View style={s.card}>
+              {llrStudents.map(st => (
+                <View key={st.id} style={s.li}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.ln}>{st.name}</Text>
+                    <Text style={s.lm}>LL No: {st.ll}</Text>
+                    <Text style={s.lm}>Expiry: {st.lle || '—'}</Text>
+                  </View>
+                </View>
+              ))}
+              {llrStudents.length === 0 && <Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 10 }}>No LLRs issued</Text>}
+            </View>
+
+            <Text style={s.sec}>🪪 Driving License (DL) List</Text>
+            <View style={s.card}>
+              {dlStudents.map(st => (
+                <View key={st.id} style={s.li}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.ln}>{st.name}</Text>
+                    <Text style={s.lm}>DL No: {st.dl}</Text>
+                  </View>
+                </View>
+              ))}
+              {dlStudents.length === 0 && <Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 10 }}>No DLs issued</Text>}
             </View>
           </View>
         )}
@@ -201,7 +255,17 @@ export default function DriverScreen() {
               )}
             </View>
 
-            {[['name', 'Full Name *', 'default'], ['phone', 'Phone *', 'numeric'], ['adm', 'Admission Date (YYYY-MM-DD)', 'default'], ['tot', 'Total Fee ₹ *', 'numeric'], ['paid', 'Fee Paid ₹', 'numeric']].map(([k, ph, kb]) => (
+            {/* Admission Type Selection */}
+            <Text style={s.flbl}>Admission Type *</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {[['driving', 'Driving Only'], ['license', 'License Only'], ['both', 'Both']].map(([k, l]) => (
+                <TouchableOpacity key={k} style={[s.chip, form.admType === k && s.chipActive, { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0' }]} onPress={() => setForm({ ...form, admType: k })}>
+                  <Text style={[s.chipT, form.admType === k && s.chipActiveT]}>{l}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {[['name', 'Full Name *', 'default'], ['phone', 'Phone *', 'numeric'], ['adm', 'Admission Date (YYYY-MM-DD)', 'default'], ['tot', 'Total Fee ₹ *', 'numeric'], ['paid', 'Fee Paid ₹', 'numeric'], ['ll', 'LL Number', 'default'], ['lle', 'LL Expiry (YYYY-MM-DD)', 'default'], ['dl', 'DL Number', 'default']].map(([k, ph, kb]) => (
               <View key={k} style={s.fld}>
                 <Text style={s.flbl}>{ph}</Text>
                 <TextInput style={s.finp} placeholder={ph} keyboardType={kb} value={form[k]} onChangeText={v => setForm({ ...form, [k]: v })} />
@@ -289,4 +353,8 @@ const s = StyleSheet.create({
   nl: { fontSize: 10, fontWeight: '700', color: '#94a3b8' },
   nlActive: { color: '#0f2044' },
   nd: { width: 15, height: 2.5, backgroundColor: '#0f2044', borderRadius: 99 },
+  chip: { paddingHorizontal: 13, paddingVertical: 6, borderRadius: 99, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 3, elevation: 1 },
+  chipActive: { backgroundColor: '#0f2044', borderColor: '#0f2044' },
+  chipT: { fontSize: 11, fontWeight: '800', color: '#64748b' },
+  chipActiveT: { color: '#fff' },
 });
