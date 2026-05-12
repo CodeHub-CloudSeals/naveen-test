@@ -24,15 +24,30 @@ export const AuthProvider = ({ children }) => {
   // role: 'school' | 'driver' | 'student'
   // identifier: phone number entered by user
   const login = async (phone, role) => {
+    if (!phone || typeof phone !== 'string') throw new Error('invalid-phone');
+    const trimmedPhone = phone.replace(/\D/g, '').slice(-10);
+    console.log(`Attempting login: phone=[${trimmedPhone}], role=[${role}]`);
     try {
       const q = query(
         collection(db, 'driving_school_users'),
-        where('phone', '==', phone.trim()),
+        where('phone', '==', trimmedPhone),
         where('key', '==', role)
       );
       const snap = await getDocs(q);
-      if (snap.empty) throw new Error('not-found');
+
+      if (snap.empty) {
+        console.warn(`No user found for phone: ${trimmedPhone} and role: ${role}`);
+        // Diagnostic check: find ANY role for this phone
+        const qAny = query(collection(db, 'driving_school_users'), where('phone', '==', trimmedPhone));
+        const snapAny = await getDocs(qAny);
+        if (!snapAny.empty) {
+          const actualRole = snapAny.docs[0].data().key;
+          throw new Error(`wrong-role:${actualRole}`);
+        }
+        throw new Error('not-found');
+      }
       const userData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      console.log("User data found:", JSON.stringify(userData));
 
       // Default plan if missing for testing
       if (userData.key === 'school' && !userData.subscriptionPlan) {

@@ -13,7 +13,7 @@
     "android": {
       "package": "com.driving_school.app",
       "googleServicesFile": "./google-services.json",
-      "permissions": ["CAMERA"],
+      "permissions": ["CAMERA", "android.permission.DETECT_SCREEN_CAPTURE"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0f2044"

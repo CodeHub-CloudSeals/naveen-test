@@ -21,22 +21,38 @@ export default function LoginScreen() {
   const selectedRole = ROLES.find(r => r.key === role);
 
   const handleLogin = async () => {
-    if (!phone.trim()) { Alert.alert('Error', 'Please enter your phone number'); return; }
+    const sanitized = phone.replace(/\D/g, '').slice(-10);
+    if (sanitized.length !== 10) {
+      Alert.alert('Invalid Phone', 'Please enter a 10-digit phone number');
+      return;
+    }
     setLoading(true);
     try {
-      await login(phone, role);
-    } catch {
-      Alert.alert('Login Failed', 'No account found with this phone number.\nPlease contact your school owner.');
+      await login(sanitized, role);
+    } catch (e) {
+      console.error("Login catch block:", e);
+      const errMsg = (e && e.message) ? String(e.message) : '';
+
+      if (errMsg === 'not-found') {
+        Alert.alert('Login Failed', `No account found for ${sanitized} as ${selectedRole?.label || 'selected role'}.\n\nPlease ensure you selected the correct role and entered the registered phone number.`);
+      } else if (errMsg.indexOf('wrong-role:') === 0) {
+        const actual = errMsg.split(':')[1];
+        const roleName = ROLES.find(r => r.key === actual)?.label || actual;
+        Alert.alert('Wrong Role Selected', `This phone number is registered as "${roleName}", not "${selectedRole?.label || 'selected role'}".\n\nPlease go back and select ${roleName} to login.`);
+      } else {
+        Alert.alert('Login Error', errMsg || 'An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleRegister = async () => {
-    if (!reg.name || !reg.phone || !reg.schoolName) {
-      Alert.alert('Error', 'Please fill all fields'); return;
+    const sanitizedPhone = reg.phone.replace(/\D/g, '').slice(-10);
+    if (!reg.name || sanitizedPhone.length !== 10 || !reg.schoolName) {
+      Alert.alert('Error', 'Please fill all fields (Phone must be 10 digits)'); return;
     }
-    const existing = await getDocs(query(collection(db, 'driving_school_users'), where('phone', '==', reg.phone.trim()), where('key', '==', 'school')));
+    const existing = await getDocs(query(collection(db, 'driving_school_users'), where('phone', '==', sanitizedPhone), where('key', '==', 'school')));
     if (!existing.empty) {
       Alert.alert('Already Exists', 'Account already exists with this phone. Please login instead.'); return;
     }
@@ -46,12 +62,12 @@ export default function LoginScreen() {
       const docRef = await addDoc(collection(db, 'driving_school_users'), {
         key: 'school',
         name: reg.name.trim(),
-        phone: reg.phone.trim(),
+        phone: sanitizedPhone,
         schoolName: reg.schoolName.trim(),
         schoolId,
         subscriptionPlan: null,
       });
-      loginDirect({ id: docRef.id, key: 'school', name: reg.name.trim(), phone: reg.phone.trim(), schoolName: reg.schoolName.trim(), schoolId, subscriptionPlan: null });
+      loginDirect({ id: docRef.id, key: 'school', name: reg.name.trim(), phone: sanitizedPhone, schoolName: reg.schoolName.trim(), schoolId, subscriptionPlan: null });
     } catch (e) {
       Alert.alert('Error', 'Registration failed: ' + e.message);
     } finally {
