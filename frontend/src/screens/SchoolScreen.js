@@ -117,7 +117,17 @@ export default function SchoolScreen() {
     finally { setAddingDriver(false); }
   };
 
-  const TABS = [['home', '🏠', 'Home'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['licenses', '🪪', 'Licenses'], ['fees', '💰', 'Fees'], ['staff', '🧑‍🏫', 'Staff'], ['add', '➕', 'Add']];
+  const TABS = [['home', '🏠', 'Home'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['licenses', '🪪', 'Licenses'], ['revenue', '💰', 'Revenue'], ['staff', '🧑‍🏫', 'Staff'], ['add', '➕', 'Add']];
+
+  // Revenue calculations
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const thisMonthPayments = payments.filter(p => p.collectedAt && p.collectedAt >= monthStart);
+  const monthCollected = thisMonthPayments.reduce((a, p) => a + (p.amount || 0), 0);
+  const monthPending = pen; // pen calculated above = total outstanding across all students
+  const clearedStudents = students.filter(st => (st.paid || 0) >= (st.tot || 0) && (st.tot || 0) > 0);
+  const pendingStudents = students.filter(st => (st.paid || 0) < (st.tot || 0));
+  const recentPayments = [...payments].sort((a, b) => (b.collectedAt || '').localeCompare(a.collectedAt || '')).slice(0, 15);
 
   const llrStudents = students.filter(st => st.ll && st.ll.trim() !== '');
   const dlStudents = students.filter(st => st.dl && st.dl.trim() !== '');
@@ -323,28 +333,88 @@ export default function SchoolScreen() {
           </View>
         )}
 
-        {/* FEES */}
-        {tab === 'fees' && (
+        {/* REVENUE */}
+        {tab === 'revenue' && (
           <View>
-            <Text style={s.sec}>💰 Fee Summary</Text>
+            {/* This month summary */}
+            <Text style={s.sec}>📅 This Month ({now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })})</Text>
+            <View style={{ flexDirection: 'row', gap: 9, marginBottom: 10 }}>
+              <View style={[s.card, { flex: 1, alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#10b981' }]}>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: '#10b981' }}>₹{monthCollected.toLocaleString()}</Text>
+                <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>COLLECTED THIS MONTH</Text>
+              </View>
+              <View style={[s.card, { flex: 1, alignItems: 'center', borderLeftWidth: 4, borderLeftColor: monthPending > 0 ? '#ef4444' : '#10b981' }]}>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: monthPending > 0 ? '#ef4444' : '#10b981' }}>₹{monthPending.toLocaleString()}</Text>
+                <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>STILL PENDING</Text>
+              </View>
+            </View>
+
+            {/* Overall summary */}
+            <Text style={s.sec}>💰 Overall Summary</Text>
             <View style={s.card}>
-              {[['Total Fees', '₹' + tot.toLocaleString(), '#0f172a'], ['Collected', '₹' + col.toLocaleString(), '#10b981'], ['Pending', '₹' + pen.toLocaleString(), pen > 0 ? '#ef4444' : '#10b981']].map(([l, v, c]) => (
+              {[['Total Fees', '₹' + tot.toLocaleString(), '#0f172a'], ['Collected (All-time)', '₹' + col.toLocaleString(), '#10b981'], ['Pending', '₹' + pen.toLocaleString(), pen > 0 ? '#ef4444' : '#10b981']].map(([l, v, c]) => (
                 <View key={l} style={s.ir}><Text style={s.il}>{l}</Text><Text style={[s.iv, { color: c }]}>{v}</Text></View>
               ))}
             </View>
-            <Text style={s.sec}>🔴 Balance Pending</Text>
-            {students.filter(st => st.paid < st.tot).map(st => (
-              <View key={st.id} style={[s.card, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#ef4444' }]}>
-                <View><Text style={{ fontSize: 13, fontWeight: '800' }}>{st.name}</Text><Text style={{ fontSize: 11, color: '#94a3b8' }}>📱 {st.phone}</Text></View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 16, fontWeight: '900', color: '#ef4444' }}>₹{(st.tot - st.paid).toLocaleString()}</Text>
-                  <TouchableOpacity style={[s.btnG, { marginTop: 5 }]} onPress={() => { setPayModal(st); setPayAmt(''); }}><Text style={s.btnT}>💰 Collect</Text></TouchableOpacity>
+
+            {/* Cleared students */}
+            <Text style={s.sec}>✅ Cleared ({clearedStudents.length})</Text>
+            {clearedStudents.length === 0 ? (
+              <View style={s.card}><Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 12 }}>No students cleared yet</Text></View>
+            ) : (
+              clearedStudents.map(st => (
+                <View key={st.id} style={[s.card, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#10b981' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800' }}>{st.name}</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>📱 {st.phone}</Text>
+                  </View>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: '#10b981' }}>₹{(st.tot || 0).toLocaleString()} ✓</Text>
                 </View>
-              </View>
-            ))}
-            {students.filter(st => st.paid < st.tot).length === 0 && (
+              ))
+            )}
+
+            {/* Pending students */}
+            <Text style={s.sec}>🔴 Pending ({pendingStudents.length})</Text>
+            {pendingStudents.length === 0 ? (
               <View style={[s.card, { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' }]}>
                 <Text style={{ color: '#16a34a', fontWeight: '700', textAlign: 'center' }}>✅ All fees cleared!</Text>
+              </View>
+            ) : (
+              pendingStudents.map(st => (
+                <View key={st.id} style={[s.card, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#ef4444' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800' }}>{st.name}</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>📱 {st.phone}</Text>
+                    <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Paid: ₹{(st.paid || 0).toLocaleString()} / ₹{(st.tot || 0).toLocaleString()}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '900', color: '#ef4444' }}>₹{((st.tot || 0) - (st.paid || 0)).toLocaleString()}</Text>
+                    <TouchableOpacity style={[s.btnG, { marginTop: 5 }]} onPress={() => { setPayModal(st); setPayAmt(''); }}><Text style={s.btnT}>💰 Collect</Text></TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+
+            {/* Recent payment history */}
+            <Text style={s.sec}>📋 Recent Payments (Who Collected)</Text>
+            {recentPayments.length === 0 ? (
+              <View style={s.card}><Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 12 }}>No payments recorded yet</Text></View>
+            ) : (
+              <View style={s.card}>
+                {recentPayments.map(p => (
+                  <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700' }}>{p.studentName} {p.cleared && <Text style={{ color: '#10b981', fontSize: 11 }}>✓ cleared</Text>}</Text>
+                      <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                        by {p.collectorName}{p.collectorRole ? ` (${p.collectorRole})` : ''}
+                      </Text>
+                      <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
+                        {p.collectedAt ? new Date(p.collectedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#10b981' }}>+₹{(p.amount || 0).toLocaleString()}</Text>
+                  </View>
+                ))}
               </View>
             )}
           </View>
@@ -472,7 +542,7 @@ export default function SchoolScreen() {
             <TextInput style={[s.finp, { fontSize: 18, fontWeight: '800' }]} placeholder="Enter amount" keyboardType="numeric" value={payAmt} onChangeText={setPayAmt} autoFocus />
             <View style={{ flexDirection: 'row', gap: 9, marginTop: 16 }}>
               <TouchableOpacity style={[s.btnFull, { backgroundColor: '#64748b', flex: 1 }]} onPress={() => setPayModal(null)}><Text style={s.btnFullT}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity style={[s.btnFull, { backgroundColor: '#10b981', flex: 1 }]} onPress={() => { const a = parseInt(payAmt); if (!a || a <= 0) { Alert.alert('Error', 'Please enter a valid amount'); return; } collectPayment(payModal.id, a); setPayModal(null); }}>
+              <TouchableOpacity style={[s.btnFull, { backgroundColor: '#10b981', flex: 1 }]} onPress={() => { const a = parseInt(payAmt); if (!a || a <= 0) { Alert.alert('Error', 'Please enter a valid amount'); return; } collectPayment(payModal.id, a, user); setPayModal(null); }}>
                 <Text style={s.btnFullT}>✅ Confirm</Text>
               </TouchableOpacity>
             </View>
