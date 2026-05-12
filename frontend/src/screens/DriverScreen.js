@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, Linking, ActivityIndicator, Image } from 'react-native';
 import { collection, addDoc, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -15,6 +15,7 @@ export default function DriverScreen() {
   const [admTypeFilter, setAdmTypeFilter] = useState('all');
   const [form, setForm] = useState({ name: '', phone: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', tot: '', paid: '', ll: '', lle: '', dl: '', admType: 'both' });
   const [faceDesc, setFaceDesc] = useState(null);
+  const [facePhoto, setFacePhoto] = useState(null);
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [showFaceScan, setShowFaceScan] = useState(false);
   const [addingStudent, setAddingStudent] = useState(false);
@@ -54,10 +55,11 @@ export default function DriverScreen() {
       });
       // Auto-set admission date to today (cannot be edited manually)
       const today = new Date().toISOString().slice(0, 10);
-      await addStudent({ ...form, phone, adm: today, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, schoolId: user?.schoolId });
+      await addStudent({ ...form, phone, adm: today, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, faceImage: facePhoto, schoolId: user?.schoolId });
       Alert.alert('Success ✅', `${form.name} registered with face!\nLogin phone: ${phone}`);
       setForm({ name: '', phone: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', tot: '', paid: '', ll: '', lle: '', dl: '', admType: 'both' });
       setFaceDesc(null);
+      setFacePhoto(null);
       setTab('students');
     } catch (e) {
       Alert.alert('Error', 'Failed to add student: ' + e.message);
@@ -240,9 +242,13 @@ export default function DriverScreen() {
               <Text style={s.flbl}>Student Face Photo *</Text>
               {faceDesc ? (
                 <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-                  <Text style={{ fontSize: 40 }}>✅</Text>
+                  {facePhoto ? (
+                    <Image source={{ uri: facePhoto }} style={{ width: 110, height: 110, borderRadius: 14, marginBottom: 6 }} />
+                  ) : (
+                    <Text style={{ fontSize: 40 }}>✅</Text>
+                  )}
                   <Text style={{ color: '#10b981', fontWeight: '800', fontSize: 14, marginTop: 6 }}>Face Registered!</Text>
-                  <TouchableOpacity onPress={() => setFaceDesc(null)} style={{ marginTop: 8 }}>
+                  <TouchableOpacity onPress={() => { setFaceDesc(null); setFacePhoto(null); }} style={{ marginTop: 8 }}>
                     <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>Retake</Text>
                   </TouchableOpacity>
                 </View>
@@ -298,7 +304,16 @@ export default function DriverScreen() {
       <FaceScanModal
         visible={showFaceCapture}
         mode="capture"
-        onCapture={(desc) => { setFaceDesc(desc); setShowFaceCapture(false); }}
+        onCapture={(res) => {
+          if (res && typeof res === 'object' && !Array.isArray(res)) {
+            setFaceDesc(res.descriptor || null);
+            setFacePhoto(res.photo || null);
+          } else {
+            setFaceDesc(res);
+            setFacePhoto(null);
+          }
+          setShowFaceCapture(false);
+        }}
         onClose={() => setShowFaceCapture(false)}
       />
 

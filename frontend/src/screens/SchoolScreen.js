@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator, Image } from 'react-native';
 import { collection, addDoc, onSnapshot, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,7 @@ export default function SchoolScreen() {
   const [payAmt, setPayAmt] = useState('');
   const [form, setForm] = useState({ name: '', rel: '', phone: '', dob: '', gender: 'M', cardNo: '', addr: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', ll: '', lle: '', dl: '', test: '', tot: '', paid: '', admType: 'both' });
   const [faceDesc, setFaceDesc] = useState(null);
+  const [facePhoto, setFacePhoto] = useState(null);
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [showFaceScan, setShowFaceScan] = useState(false);
   const [drivers, setDrivers] = useState([]);
@@ -84,10 +85,11 @@ export default function SchoolScreen() {
       });
       // Auto-set admission date to today (cannot be edited manually)
       const today = new Date().toISOString().slice(0, 10);
-      await addStudent({ ...form, phone, adm: today, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, schoolId: user?.schoolId });
+      await addStudent({ ...form, phone, adm: today, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, faceImage: facePhoto, schoolId: user?.schoolId });
       Alert.alert('Success ✅', `${form.name} registered!\nLogin phone: ${phone}`);
       setForm({ name: '', rel: '', phone: '', dob: '', gender: 'M', cardNo: '', addr: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', ll: '', lle: '', dl: '', test: '', tot: '', paid: '', admType: 'both' });
       setFaceDesc(null);
+      setFacePhoto(null);
       setTab('students');
     } catch (e) {
       Alert.alert('Error', 'Failed to add student: ' + e.message);
@@ -262,9 +264,18 @@ export default function SchoolScreen() {
               return (
                 <View key={st.id} style={[s.stCard, b > 0 ? s.warn : st.cls >= TC ? s.done : {}]}>
                   <View style={s.stRow}>
-                    <View>
-                      <Text style={s.stName}>{st.name} <Text style={s.stNo}>#{st.cardNo}</Text></Text>
-                      <Text style={s.stMeta}>📱 {st.phone} · {st.veh}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      {st.faceImage ? (
+                        <Image source={{ uri: st.faceImage }} style={{ width: 42, height: 42, borderRadius: 12, marginRight: 10 }} />
+                      ) : (
+                        <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: '#0f2044', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                          <Text style={{ color: '#fff', fontWeight: '900', fontSize: 16 }}>{st.name?.[0] || '?'}</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.stName}>{st.name} <Text style={s.stNo}>#{st.cardNo}</Text></Text>
+                        <Text style={s.stMeta}>📱 {st.phone} · {st.veh}</Text>
+                      </View>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       {b > 0 ? <View style={s.tagR}><Text style={s.tagRT}>₹{b.toLocaleString()} due</Text></View>
@@ -421,9 +432,13 @@ export default function SchoolScreen() {
               <Text style={s.flbl}>Student Face Photo *</Text>
               {faceDesc ? (
                 <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-                  <Text style={{ fontSize: 40 }}>✅</Text>
+                  {facePhoto ? (
+                    <Image source={{ uri: facePhoto }} style={{ width: 110, height: 110, borderRadius: 14, marginBottom: 6 }} />
+                  ) : (
+                    <Text style={{ fontSize: 40 }}>✅</Text>
+                  )}
                   <Text style={{ color: '#10b981', fontWeight: '800', fontSize: 14, marginTop: 6 }}>Face Registered!</Text>
-                  <TouchableOpacity onPress={() => setFaceDesc(null)} style={{ marginTop: 8 }}>
+                  <TouchableOpacity onPress={() => { setFaceDesc(null); setFacePhoto(null); }} style={{ marginTop: 8 }}>
                     <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>Retake</Text>
                   </TouchableOpacity>
                 </View>
@@ -479,8 +494,18 @@ export default function SchoolScreen() {
       {/* STUDENT DETAIL MODAL */}
       <Modal visible={!!selectedStudent} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedStudent(null)}>
         {selectedStudent && (
-          <ScrollView style={{ padding: 20, paddingTop: 40 }}>
-            <Text style={{ fontSize: 18, fontWeight: '900', marginBottom: 16 }}>{selectedStudent.name}</Text>
+          <ScrollView style={{ padding: 20, paddingTop: 40 }} contentContainerStyle={{ paddingBottom: 60 }}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              {selectedStudent.faceImage ? (
+                <Image source={{ uri: selectedStudent.faceImage }} style={{ width: 130, height: 130, borderRadius: 18, marginBottom: 10 }} />
+              ) : (
+                <View style={{ width: 130, height: 130, borderRadius: 18, backgroundColor: '#0f2044', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+                  <Text style={{ color: '#fff', fontSize: 48, fontWeight: '900' }}>{selectedStudent.name?.[0] || '?'}</Text>
+                </View>
+              )}
+              <Text style={{ fontSize: 20, fontWeight: '900' }}>{selectedStudent.name}</Text>
+              <Text style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>📱 {selectedStudent.phone}</Text>
+            </View>
             {[['Card No.', '#' + selectedStudent.cardNo], ['Phone', selectedStudent.phone], ['Vehicle', selectedStudent.veh], ['Slot', selectedStudent.slot], ['Admission', fmt(selectedStudent.adm)], ['LL No.', selectedStudent.ll || '—'], ['LL Expiry', fmt(selectedStudent.lle)], ['Classes Taken', selectedStudent.cls + ' / 26'], ['Classes Remaining', (26 - selectedStudent.cls) + ' remaining'], ['Total Fee', '₹' + (selectedStudent.tot || 0).toLocaleString()], ['Paid', '₹' + (selectedStudent.paid || 0).toLocaleString()], ['Balance', '₹' + ((selectedStudent.tot || 0) - (selectedStudent.paid || 0)).toLocaleString()], ['Face Registered', selectedStudent.faceDescriptor ? 'Yes ✅' : 'No ❌']].map(([l, v]) => (
               <View key={l} style={s.ir}><Text style={s.il}>{l}</Text><Text style={[s.iv, l === 'Classes Taken' && { color: '#2563eb', fontSize: 15 }]}>{v}</Text></View>
             ))}
@@ -517,7 +542,17 @@ export default function SchoolScreen() {
       <FaceScanModal
         visible={showFaceCapture}
         mode="capture"
-        onCapture={(desc) => { setFaceDesc(desc); setShowFaceCapture(false); }}
+        onCapture={(res) => {
+          // res may be { descriptor, photo } from new modal, or raw array from legacy
+          if (res && typeof res === 'object' && !Array.isArray(res)) {
+            setFaceDesc(res.descriptor || null);
+            setFacePhoto(res.photo || null);
+          } else {
+            setFaceDesc(res);
+            setFacePhoto(null);
+          }
+          setShowFaceCapture(false);
+        }}
         onClose={() => setShowFaceCapture(false)}
       />
 
