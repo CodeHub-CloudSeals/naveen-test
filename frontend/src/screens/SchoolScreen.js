@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
-import { collection, addDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -65,16 +65,17 @@ export default function SchoolScreen() {
 
     setAddingStudent(true);
     try {
-      // Also check users collection to avoid creating a duplicate login record
+      // Active student check passed (students list filters out soft-deleted).
+      // Clean up any orphan login records left over from previously-deleted students
+      // with the same phone — so the phone can be re-used.
       const existing = await getDocs(query(
         collection(db, 'driving_school_users'),
         where('phone', '==', phone),
         where('schoolId', '==', user?.schoolId),
         where('key', '==', 'student')
       ));
-      if (!existing.empty) {
-        Alert.alert('Duplicate', `Student with phone ${phone} is already registered.`);
-        return;
+      for (const d of existing.docs) {
+        await deleteDoc(doc(db, 'driving_school_users', d.id));
       }
 
       await addDoc(collection(db, 'driving_school_users'), {
@@ -144,7 +145,7 @@ export default function SchoolScreen() {
       </View>
 
       {/* CONTENT */}
-      <ScrollView style={s.body} showsVerticalScrollIndicator={false}>
+      <ScrollView style={s.body} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
 
         {/* HOME */}
         {tab === 'home' && (

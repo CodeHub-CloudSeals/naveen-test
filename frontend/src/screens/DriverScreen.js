@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, Linking, ActivityIndicator } from 'react-native';
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -36,16 +36,16 @@ export default function DriverScreen() {
 
     setAddingStudent(true);
     try {
-      // Avoid duplicate login record
+      // Active student check passed. Clean up orphan login records (left over
+      // from previously soft-deleted students) so the phone can be re-used.
       const existing = await getDocs(query(
         collection(db, 'driving_school_users'),
         where('phone', '==', phone),
         where('schoolId', '==', user?.schoolId),
         where('key', '==', 'student')
       ));
-      if (!existing.empty) {
-        Alert.alert('Duplicate', `Student with phone ${phone} is already registered.`);
-        return;
+      for (const d of existing.docs) {
+        await deleteDoc(doc(db, 'driving_school_users', d.id));
       }
 
       await addDoc(collection(db, 'driving_school_users'), {
@@ -91,7 +91,7 @@ export default function DriverScreen() {
         <View style={s.badge}><Text style={s.badgeT}>🧑‍🏫 Instructor — Full Access</Text></View>
       </View>
 
-      <ScrollView style={s.body} showsVerticalScrollIndicator={false}>
+      <ScrollView style={s.body} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
 
         {/* SCHEDULE */}
         {tab === 'schedule' && (
