@@ -21,7 +21,7 @@ export default function DriverScreen() {
 
   const handleAdd = async () => {
     if (addingStudent) return; // prevent double-submit
-    if (!form.name || !form.phone || !form.adm || !form.tot) { Alert.alert('Error', 'Fill required fields'); return; }
+    if (!form.name || !form.phone || !form.tot) { Alert.alert('Error', 'Fill required fields'); return; }
     if (!faceDesc) { Alert.alert('Face Required', 'Please capture student face (press 📷 Capture Face)'); return; }
 
     const phone = form.phone.replace(/\D/g, '').slice(-10);
@@ -52,7 +52,9 @@ export default function DriverScreen() {
         name: form.name, phone,
         key: 'student', schoolId: user?.schoolId, schoolName: user?.schoolName,
       });
-      await addStudent({ ...form, phone, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, schoolId: user?.schoolId });
+      // Auto-set admission date to today (cannot be edited manually)
+      const today = new Date().toISOString().slice(0, 10);
+      await addStudent({ ...form, phone, adm: today, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, schoolId: user?.schoolId });
       Alert.alert('Success ✅', `${form.name} registered with face!\nLogin phone: ${phone}`);
       setForm({ name: '', phone: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', tot: '', paid: '', ll: '', lle: '', dl: '', admType: 'both' });
       setFaceDesc(null);
@@ -70,10 +72,7 @@ export default function DriverScreen() {
     Alert.alert('Attendance Marked! ✅', `${student.name}\nClass ${student.cls + 1} / 26 marked`);
   };
 
-  const TABS = [['schedule', '📅', 'Schedule'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['licenses', '🪪', 'Licenses'], ['fees', '💰', 'Fees'], ['add', '➕', 'Add']];
-
-  const llrStudents = students.filter(st => st.ll && st.ll.trim() !== '');
-  const dlStudents = students.filter(st => st.dl && st.dl.trim() !== '');
+  const TABS = [['schedule', '📅', 'Schedule'], ['scan', '📷', 'Scan'], ['students', '👥', 'Students'], ['fees', '💰', 'Fees'], ['add', '➕', 'Add']];
 
   return (
     <View style={s.container}>
@@ -231,43 +230,6 @@ export default function DriverScreen() {
           </View>
         )}
 
-        {/* LICENSES */}
-        {tab === 'licenses' && (
-          <View>
-            <View style={s.statsGrid}>
-              <View style={s.stat}><Text style={s.statV}>{llrStudents.length}</Text><Text style={s.statL}>LLR Issued</Text></View>
-              <View style={s.stat}><Text style={s.statV}>{dlStudents.length}</Text><Text style={s.statL}>DL Issued</Text></View>
-            </View>
-
-            <Text style={s.sec}>📝 LLR Issued List</Text>
-            <View style={s.card}>
-              {llrStudents.map(st => (
-                <View key={st.id} style={s.li}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.ln}>{st.name}</Text>
-                    <Text style={s.lm}>LL No: {st.ll}</Text>
-                    <Text style={s.lm}>Expiry: {st.lle || '—'}</Text>
-                  </View>
-                </View>
-              ))}
-              {llrStudents.length === 0 && <Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 10 }}>No LLRs issued</Text>}
-            </View>
-
-            <Text style={s.sec}>🪪 Driving License (DL) List</Text>
-            <View style={s.card}>
-              {dlStudents.map(st => (
-                <View key={st.id} style={s.li}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.ln}>{st.name}</Text>
-                    <Text style={s.lm}>DL No: {st.dl}</Text>
-                  </View>
-                </View>
-              ))}
-              {dlStudents.length === 0 && <Text style={{ color: '#94a3b8', textAlign: 'center', paddingVertical: 10 }}>No DLs issued</Text>}
-            </View>
-          </View>
-        )}
-
         {/* ADD */}
         {tab === 'add' && (
           <View>
@@ -303,7 +265,13 @@ export default function DriverScreen() {
               ))}
             </View>
 
-            {[['name', 'Full Name *', 'default'], ['phone', 'Phone *', 'numeric'], ['adm', 'Admission Date (YYYY-MM-DD)', 'default'], ['tot', 'Total Fee ₹ *', 'numeric'], ['paid', 'Fee Paid ₹', 'numeric'], ['ll', 'LL Number', 'default'], ['lle', 'LL Expiry (YYYY-MM-DD)', 'default'], ['dl', 'DL Number', 'default']].map(([k, ph, kb]) => (
+            {/* Admission date auto-displayed (today) — not editable */}
+            <View style={[s.card, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, marginBottom: 12, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe' }]}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#1d4ed8' }}>📅 ADMISSION DATE</Text>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: '#0f2044' }}>{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} (Today)</Text>
+            </View>
+
+            {[['name', 'Full Name *', 'default'], ['phone', 'Phone *', 'numeric'], ['tot', 'Total Fee ₹ *', 'numeric'], ['paid', 'Fee Paid ₹', 'numeric'], ['ll', 'LL Number', 'default'], ['lle', 'LL Expiry (YYYY-MM-DD)', 'default'], ['dl', 'DL Number', 'default']].map(([k, ph, kb]) => (
               <View key={k} style={s.fld}>
                 <Text style={s.flbl}>{ph}</Text>
                 <TextInput style={s.finp} placeholder={ph} keyboardType={kb} value={form[k]} onChangeText={v => setForm({ ...form, [k]: v })} />
