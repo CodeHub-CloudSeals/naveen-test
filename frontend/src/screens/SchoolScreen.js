@@ -11,7 +11,7 @@ const fmt = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', m
 
 export default function SchoolScreen() {
   const { logout, user } = useAuth();
-  const { students, markClass, collectPayment, deleteStudent, addStudent } = useData();
+  const { students, payments = [], markClass, collectPayment, deleteStudent, addStudent } = useData();
   const [tab, setTab] = useState('home');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
