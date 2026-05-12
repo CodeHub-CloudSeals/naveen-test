@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
-import { collection, addDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -26,6 +26,7 @@ export default function SchoolScreen() {
   const [drivers, setDrivers] = useState([]);
   const [driverForm, setDriverForm] = useState({ name: '', phone: '', email: '' });
   const [addingDriver, setAddingDriver] = useState(false);
+  const [addingStudent, setAddingStudent] = useState(false);
 
   useEffect(() => {
     if (!user?.schoolId) return;
@@ -46,22 +47,49 @@ export default function SchoolScreen() {
   }
 
   const handleAdd = async () => {
+    if (addingStudent) return; // prevent double-submit
     if (!form.name || !form.phone || !form.adm || !form.tot) {
       Alert.alert('Error', 'Fill: Name, Phone, Admission, Total Fee'); return;
     }
     if (!faceDesc) { Alert.alert('Face Required', 'Please capture student face (press 📷 Capture Face)'); return; }
+
+    const phone = form.phone.replace(/\D/g, '').slice(-10);
+    if (phone.length !== 10) { Alert.alert('Invalid Phone', 'Phone must be 10 digits'); return; }
+
+    // Duplicate check — same phone already exists in this school?
+    const dup = students.find(st => (st.phone || '').replace(/\D/g, '').slice(-10) === phone);
+    if (dup) {
+      Alert.alert('Duplicate Student', `A student with phone ${phone} already exists: ${dup.name}`);
+      return;
+    }
+
+    setAddingStudent(true);
     try {
+      // Also check users collection to avoid creating a duplicate login record
+      const existing = await getDocs(query(
+        collection(db, 'driving_school_users'),
+        where('phone', '==', phone),
+        where('schoolId', '==', user?.schoolId),
+        where('key', '==', 'student')
+      ));
+      if (!existing.empty) {
+        Alert.alert('Duplicate', `Student with phone ${phone} is already registered.`);
+        return;
+      }
+
       await addDoc(collection(db, 'driving_school_users'), {
-        name: form.name, phone: form.phone.trim(),
+        name: form.name, phone,
         key: 'student', schoolId: user?.schoolId, schoolName: user?.schoolName,
       });
-      addStudent({ ...form, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, schoolId: user?.schoolId });
-      Alert.alert('Success ✅', `${form.name} registered!\nLogin phone: ${form.phone}`);
+      await addStudent({ ...form, phone, tot: parseInt(form.tot) || 0, paid: parseInt(form.paid) || 0, faceDescriptor: faceDesc, schoolId: user?.schoolId });
+      Alert.alert('Success ✅', `${form.name} registered!\nLogin phone: ${phone}`);
       setForm({ name: '', rel: '', phone: '', dob: '', gender: 'M', cardNo: '', addr: '', adm: '', slot: '6:00 AM', veh: 'Car (LMV)', ll: '', lle: '', dl: '', test: '', tot: '', paid: '', admType: 'both' });
       setFaceDesc(null);
       setTab('students');
     } catch (e) {
       Alert.alert('Error', 'Failed to add student: ' + e.message);
+    } finally {
+      setAddingStudent(false);
     }
   };
 
@@ -396,7 +424,9 @@ export default function SchoolScreen() {
                 <TextInput style={s.finp} placeholder={ph} keyboardType={kb} value={form[k]} onChangeText={v => setForm({ ...form, [k]: v })} />
               </View>
             ))}
-            <TouchableOpacity style={s.btnFull} onPress={handleAdd}><Text style={s.btnFullT}>✅ Register Student</Text></TouchableOpacity>
+            <TouchableOpacity style={[s.btnFull, addingStudent && { opacity: 0.7 }]} onPress={handleAdd} disabled={addingStudent}>
+              {addingStudent ? <ActivityIndicator color="#fff" /> : <Text style={s.btnFullT}>✅ Register Student</Text>}
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
