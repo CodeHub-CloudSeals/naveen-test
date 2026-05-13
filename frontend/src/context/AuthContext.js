@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, doc, updateDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../firebase';
 
@@ -24,9 +24,15 @@ export const AuthProvider = ({ children }) => {
   // role: 'school' | 'driver' | 'student'
   // identifier: phone number entered by user
   const login = async (phone, role) => {
-    if (!phone || typeof phone !== 'string') throw new Error('invalid-phone');
+    if (!phone || typeof phone !== 'string') throw new Error('Invalid phone input');
     const trimmedPhone = phone.replace(/\D/g, '').slice(-10);
-    console.log(`Attempting login: phone=[${trimmedPhone}], role=[${role}]`);
+
+    // Check if Firebase functions exist
+    if (typeof collection !== 'function') throw new Error('Firebase collection is not a function');
+    if (typeof query !== 'function') throw new Error('Firebase query is not a function');
+    if (typeof getDocs !== 'function') throw new Error('Firebase getDocs is not a function');
+    if (!db) throw new Error('Database not initialized');
+
     try {
       const q = query(
         collection(db, 'driving_school_users'),
@@ -36,7 +42,6 @@ export const AuthProvider = ({ children }) => {
       const snap = await getDocs(q);
 
       if (snap.empty) {
-        console.warn(`No user found for phone: ${trimmedPhone} and role: ${role}`);
         // Diagnostic check: find ANY role for this phone
         const qAny = query(collection(db, 'driving_school_users'), where('phone', '==', trimmedPhone));
         const snapAny = await getDocs(qAny);
@@ -46,8 +51,11 @@ export const AuthProvider = ({ children }) => {
         }
         throw new Error('not-found');
       }
-      const userData = { id: snap.docs[0].id, ...snap.docs[0].data() };
-      console.log("User data found:", JSON.stringify(userData));
+
+      const firstDoc = snap.docs[0];
+      if (!firstDoc || typeof firstDoc.data !== 'function') throw new Error('Invalid document data function');
+
+      const userData = { id: firstDoc.id, ...firstDoc.data() };
 
       // Default plan if missing for testing
       if (userData.key === 'school' && !userData.subscriptionPlan) {
@@ -55,10 +63,19 @@ export const AuthProvider = ({ children }) => {
       }
 
       setUser(userData);
-      await saveSession(userData);
+
+      // Safe save session
+      try {
+        if (AsyncStorage && typeof AsyncStorage.setItem === 'function') {
+          await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(userData));
+        }
+      } catch (err) {
+        console.warn("AsyncStorage Error:", err);
+      }
+
       return userData;
     } catch (e) {
-      console.error("Login Error:", e);
+      console.error("Detailed Login Error:", e);
       throw e;
     }
   };
@@ -85,8 +102,18 @@ export const AuthProvider = ({ children }) => {
     clearSession();
   };
 
+  // Update a field on the logged-in user's document (used for settings like UPI ID)
+  const updateUserProfile = async (patch) => {
+    if (!user?.id) throw new Error('Not logged in');
+    await updateDoc(doc(db, 'driving_school_users', user.id), patch);
+    const updated = { ...user, ...patch };
+    setUser(updated);
+    saveSession(updated);
+    return updated;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, authLoading, login, loginDirect, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, authLoading, login, loginDirect, logout, refreshUser, updateUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

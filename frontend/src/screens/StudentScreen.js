@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { openUpi } from '../utils/payment';
 
 const TC = 26;
 const fmt = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -10,7 +13,26 @@ export default function StudentScreen() {
   const { logout, user } = useAuth();
   const { students } = useData();
   const [tab, setTab] = useState('home');
+  const [schoolOwner, setSchoolOwner] = useState(null);
   const s = students.find(st => st.phone === user?.phone) || null;
+
+  // Fetch school owner's UPI ID (for payments)
+  useEffect(() => {
+    if (!user?.schoolId) return;
+    (async () => {
+      try {
+        const q = query(
+          collection(db, 'driving_school_users'),
+          where('schoolId', '==', user.schoolId),
+          where('key', '==', 'school')
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) setSchoolOwner({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      } catch (e) {
+        console.warn('Failed to fetch school owner UPI:', e?.message);
+      }
+    })();
+  }, [user?.schoolId]);
   if (!s) return (
     <View style={{ flex: 1, backgroundColor: '#0f2044', alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ color: '#fff', fontSize: 16, marginBottom: 8 }}>Your student record was not found.</Text>
@@ -44,7 +66,7 @@ export default function StudentScreen() {
         <View style={st.badge}><Text style={st.badgeT}>🎓 Student — Personal Data Only</Text></View>
       </View>
 
-      <ScrollView style={st.body} showsVerticalScrollIndicator={false}>
+      <ScrollView style={st.body} contentContainerStyle={{paddingBottom:120}} showsVerticalScrollIndicator={false}>
         {/* HOME */}
         {tab==='home' && (
           <View>
@@ -121,6 +143,71 @@ export default function StudentScreen() {
                 <View key={l} style={st.ir}><Text style={st.il}>{l}</Text><Text style={st.iv}>{v}</Text></View>
               ))}
             </View>
+
+            {/* PAY NOW SECTION */}
+            {bal > 0 && (
+              <View>
+                <Text style={st.sec}>💳 Pay ₹{bal.toLocaleString()} Now</Text>
+                {schoolOwner?.upiId ? (
+                  <View style={st.card}>
+                    <Text style={{fontSize:11,color:'#64748b',marginBottom:8}}>
+                      Pay to: <Text style={{fontWeight:'800',color:'#0f2044'}}>{schoolOwner.upiName || schoolOwner.schoolName || 'Driving School'}</Text>
+                    </Text>
+                    <Text style={{fontSize:11,color:'#64748b',marginBottom:12}}>
+                      UPI ID: <Text style={{fontWeight:'800',color:'#0f2044'}}>{schoolOwner.upiId}</Text>
+                    </Text>
+
+                    {/* Full balance button — opens UPI app chooser */}
+                    <TouchableOpacity
+                      style={{backgroundColor:'#10b981',padding:14,borderRadius:14,alignItems:'center',marginBottom:8}}
+                      onPress={() => openUpi({
+                        upiId: schoolOwner.upiId,
+                        payeeName: schoolOwner.upiName || schoolOwner.schoolName,
+                        amount: bal,
+                        note: `Fee for ${s.name} (${s.phone})`,
+                      })}
+                    >
+                      <Text style={{color:'#fff',fontSize:15,fontWeight:'900'}}>💰 Pay ₹{bal.toLocaleString()} via UPI</Text>
+                      <Text style={{color:'rgba(255,255,255,0.85)',fontSize:11,marginTop:3}}>GPay / PhonePe / Paytm / BHIM</Text>
+                    </TouchableOpacity>
+
+                    {/* App-specific shortcuts */}
+                    <Text style={{fontSize:10,color:'#94a3b8',fontWeight:'700',textAlign:'center',marginTop:6,marginBottom:8,textTransform:'uppercase',letterSpacing:1}}>or pay with</Text>
+                    <View style={{flexDirection:'row',gap:8,flexWrap:'wrap'}}>
+                      {[
+                        { key: 'gpay',    label: '🟢 Google Pay', bg: '#1a73e8' },
+                        { key: 'phonepe', label: '🟣 PhonePe',    bg: '#5f259f' },
+                        { key: 'paytm',   label: '🔵 Paytm',      bg: '#00baf2' },
+                        { key: 'bhim',    label: '🟠 BHIM',       bg: '#ea580c' },
+                      ].map(app => (
+                        <TouchableOpacity
+                          key={app.key}
+                          style={{flex:1,minWidth:'45%',backgroundColor:app.bg,paddingVertical:11,borderRadius:11,alignItems:'center'}}
+                          onPress={() => openUpi({
+                            upiId: schoolOwner.upiId,
+                            payeeName: schoolOwner.upiName || schoolOwner.schoolName,
+                            amount: bal,
+                            note: `Fee for ${s.name}`,
+                          }, app.key)}
+                        >
+                          <Text style={{color:'#fff',fontSize:12,fontWeight:'800'}}>{app.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text style={{fontSize:10,color:'#94a3b8',marginTop:12,textAlign:'center'}}>
+                      After payment, your school owner will confirm and update your fee status.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={[st.card, {backgroundColor:'#fff7ed',borderWidth:1,borderColor:'#fed7aa'}]}>
+                    <Text style={{fontSize:13,color:'#9a3412',fontWeight:'700',marginBottom:6}}>⚠️ Online payment not available yet</Text>
+                    <Text style={{fontSize:11,color:'#9a3412'}}>School owner has not added their UPI ID. Please pay in person or contact support.</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             <TouchableOpacity style={st.card} onPress={()=>Linking.openURL('https://wa.me/919000300256?text=Hello+Driving School+Support!')}>
               <Text style={{fontSize:13,fontWeight:'800',color:'#0f2044'}}>💬 Chat with Support on WhatsApp</Text>
               <Text style={{fontSize:11,color:'#64748b',marginTop:4}}>📞 9000 300 256 · Available 9AM-6PM</Text>

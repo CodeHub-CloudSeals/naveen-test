@@ -10,7 +10,9 @@ const TC = 26;
 const fmt = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 export default function SchoolScreen() {
-  const { logout, user } = useAuth();
+  const { logout, user, updateUserProfile } = useAuth();
+  const [upiInput, setUpiInput] = useState('');
+  const [savingUpi, setSavingUpi] = useState(false);
   const { students, payments = [], markClass, collectPayment, deleteStudent, addStudent, updateStudentPhoto } = useData();
   const [tab, setTab] = useState('home');
   const [search, setSearch] = useState('');
@@ -192,6 +194,53 @@ export default function SchoolScreen() {
                 <Text style={{ color: '#16a34a', fontWeight: '700', textAlign: 'center' }}>✅ All fees cleared!</Text>
               </View>
             )}
+
+            {/* UPI / Payment Settings */}
+            <Text style={s.sec}>💳 Payment Settings</Text>
+            <View style={s.card}>
+              <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}>
+                Add your UPI ID so students can pay fees directly from their app via GPay, PhonePe, Paytm, BHIM, or any UPI app.
+              </Text>
+              {user?.upiId ? (
+                <View style={{ marginVertical: 8, padding: 12, backgroundColor: '#f0fdf4', borderRadius: 12, borderWidth: 1, borderColor: '#bbf7d0' }}>
+                  <Text style={{ fontSize: 11, color: '#16a34a', fontWeight: '700' }}>✅ UPI ID configured</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '900', color: '#0f2044', marginTop: 4 }}>{user.upiId}</Text>
+                </View>
+              ) : (
+                <Text style={{ fontSize: 11, color: '#ef4444', fontWeight: '700', marginVertical: 6 }}>⚠️ Not set — students cannot pay online</Text>
+              )}
+              <Text style={s.flbl}>UPI ID (e.g. yourname@okaxis, 9876543210@paytm)</Text>
+              <TextInput
+                style={s.finp}
+                placeholder="yourname@upi"
+                autoCapitalize="none"
+                value={upiInput}
+                onChangeText={setUpiInput}
+              />
+              <TouchableOpacity
+                style={[s.btnFull, { marginTop: 10, backgroundColor: '#2563eb' }, savingUpi && { opacity: 0.7 }]}
+                disabled={savingUpi}
+                onPress={async () => {
+                  const v = upiInput.trim();
+                  if (!v || !v.includes('@')) {
+                    Alert.alert('Invalid UPI ID', 'Enter a valid UPI ID like yourname@okaxis');
+                    return;
+                  }
+                  setSavingUpi(true);
+                  try {
+                    await updateUserProfile({ upiId: v, upiName: user?.schoolName || user?.name || 'Driving School' });
+                    Alert.alert('Saved ✅', 'UPI ID updated. Students can now pay using this ID.');
+                    setUpiInput('');
+                  } catch (e) {
+                    Alert.alert('Error', 'Failed to save: ' + (e?.message || 'unknown'));
+                  } finally {
+                    setSavingUpi(false);
+                  }
+                }}
+              >
+                {savingUpi ? <ActivityIndicator color="#fff" /> : <Text style={s.btnFullT}>💾 {user?.upiId ? 'Update' : 'Save'} UPI ID</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
