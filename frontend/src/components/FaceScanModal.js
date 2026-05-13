@@ -53,6 +53,7 @@ export default function FaceScanModal({
   const [done, setDone] = useState(false);
 
   const lastDesc = useRef(null);
+  const cameraRef = useRef(null);
 
   useEffect(() => {
     if (visible) {
@@ -71,7 +72,7 @@ export default function FaceScanModal({
     if (det.length > 0) lastDesc.current = extractDescriptor(det[0]);
   };
 
-  const handleAction = () => {
+  const handleAction = async () => {
     if (busy) return;
 
     if (faces.length === 0) {
@@ -92,10 +93,37 @@ export default function FaceScanModal({
     setBusy(true);
 
     if (mode === 'capture') {
+      // Take a small JPEG snapshot for profile display.
+      // Firestore docs are limited to 1 MiB total — keep photo well under that.
+      let photo = null;
+      try {
+        if (cameraRef.current?.takePictureAsync) {
+          const pic = await cameraRef.current.takePictureAsync({
+            quality: 0.15,             // heavy JPEG compression
+            base64: true,
+            skipProcessing: true,
+            pictureSize: '480x640',    // hint to use small resolution
+          });
+          if (pic?.base64) {
+            // Hard cap: drop photo if it would exceed Firestore doc budget
+            // 700 KB base64 ≈ 525 KB binary — safe with descriptor + other fields
+            const sizeKB = pic.base64.length / 1024;
+            console.log('Captured photo base64 size:', Math.round(sizeKB), 'KB');
+            if (sizeKB <= 700) {
+              photo = 'data:image/jpeg;base64,' + pic.base64;
+            } else {
+              console.warn('Photo too large (' + Math.round(sizeKB) + ' KB) — skipping');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Photo capture failed:', e?.message || e);
+      }
       setDone(true);
       setBusy(false);
       if (typeof onCapture === 'function') {
-        onCapture(desc);
+        // Backward compatible: pass an object so callers can destructure
+        onCapture({ descriptor: desc, photo });
       }
     } else {
       let best = null;
@@ -175,6 +203,7 @@ export default function FaceScanModal({
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <Camera
+          ref={cameraRef}
           style={{ flex: 1 }}
           type={Camera.Constants?.Type?.front ?? 'front'}
           onFacesDetected={onFacesDetected}

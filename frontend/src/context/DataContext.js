@@ -38,8 +38,22 @@ export const DataProvider = ({ children, schoolId }) => {
     return () => unsub();
   }, [schoolId]);
   const addStudent = async (s) => {
-    try { await addDoc(collection(db, 'driving_school_students'), { ...s, cls: 0 }); }
-    catch { setStudents(p => [...p, { ...s, id: Date.now().toString(), cls: 0 }]); }
+    // Try to save to Firestore. If it fails (e.g., doc too large because the
+    // face photo pushed past the 1 MiB limit), retry without the photo so the
+    // student record still gets created. Re-throw so the caller can show an
+    // error if everything fails.
+    try {
+      await addDoc(collection(db, 'driving_school_students'), { ...s, cls: 0 });
+    } catch (e1) {
+      console.warn('addStudent: full save failed, retrying without photo:', e1?.message || e1);
+      try {
+        const { faceImage, ...rest } = s;
+        await addDoc(collection(db, 'driving_school_students'), { ...rest, cls: 0 });
+      } catch (e2) {
+        console.warn('addStudent: minimal save failed:', e2?.message || e2);
+        throw e2;
+      }
+    }
   };
   const markClass = async (id) => {
     const s = students.find(x => x.id === id);
