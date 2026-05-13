@@ -304,6 +304,7 @@ export default function DriverScreen() {
       <FaceScanModal
         visible={showFaceCapture}
         mode="capture"
+        students={students}
         onCapture={(res) => {
           if (res && typeof res === 'object' && !Array.isArray(res)) {
             setFaceDesc(res.descriptor || null);

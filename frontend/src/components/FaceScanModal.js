@@ -76,6 +76,7 @@ export default function FaceScanModal({
   visible,
   mode = 'capture',
   students = [],
+  excludeStudentId = null,  // when retaking an existing student, don't flag self as duplicate
   onCapture,
   onMatch,
   onClose,
@@ -127,6 +128,29 @@ export default function FaceScanModal({
     setBusy(true);
 
     if (mode === 'capture') {
+      // BEFORE saving, check if this face already matches a registered student
+      // (prevents accidentally registering the same person twice).
+      let dupStudent = null;
+      let dupDist = Infinity;
+      students.forEach((st) => {
+        if (excludeStudentId && st.id === excludeStudentId) return;
+        if (!st.faceDescriptor?.length || st.faceDescriptor.length !== desc.length) return;
+        const d = faceDist(desc, st.faceDescriptor);
+        if (d < dupDist) {
+          dupDist = d;
+          dupStudent = st;
+        }
+      });
+      console.log('[FaceScan capture] closest existing match:', dupStudent?.name, 'dist=', dupDist.toFixed(3));
+      if (dupStudent && dupDist < THRESHOLD) {
+        Alert.alert(
+          'Already Registered',
+          `This face is already registered as:\n\n${dupStudent.name}\n📱 ${dupStudent.phone}\n\nCannot add the same person twice.`
+        );
+        setBusy(false);
+        return;
+      }
+
       // Take a small JPEG snapshot for profile display.
       // Firestore docs are limited to 1 MiB total — keep photo well under that.
       let photo = null;

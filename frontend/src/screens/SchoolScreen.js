@@ -546,6 +546,8 @@ export default function SchoolScreen() {
       <FaceScanModal
         visible={showFaceCapture}
         mode="capture"
+        students={students}
+        excludeStudentId={updatingPhotoFor}
         onCapture={async (res) => {
           const norm = (res && typeof res === 'object' && !Array.isArray(res))
             ? { descriptor: res.descriptor || null, photo: res.photo || null }
