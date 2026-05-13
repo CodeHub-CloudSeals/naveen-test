@@ -11,7 +11,7 @@ const fmt = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', m
 
 export default function SchoolScreen() {
   const { logout, user } = useAuth();
-  const { students, payments = [], markClass, collectPayment, deleteStudent, addStudent } = useData();
+  const { students, payments = [], markClass, collectPayment, deleteStudent, addStudent, updateStudentPhoto } = useData();
   const [tab, setTab] = useState('home');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -24,6 +24,7 @@ export default function SchoolScreen() {
   const [facePhoto, setFacePhoto] = useState(null);
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [showFaceScan, setShowFaceScan] = useState(false);
+  const [updatingPhotoFor, setUpdatingPhotoFor] = useState(null); // student id whose photo we're updating
   const [drivers, setDrivers] = useState([]);
   const [driverForm, setDriverForm] = useState({ name: '', phone: '', email: '' });
   const [addingDriver, setAddingDriver] = useState(false);
@@ -509,7 +510,10 @@ export default function SchoolScreen() {
             {[['Card No.', '#' + selectedStudent.cardNo], ['Phone', selectedStudent.phone], ['Vehicle', selectedStudent.veh], ['Slot', selectedStudent.slot], ['Admission', fmt(selectedStudent.adm)], ['LL No.', selectedStudent.ll || '—'], ['LL Expiry', fmt(selectedStudent.lle)], ['Classes Taken', selectedStudent.cls + ' / 26'], ['Classes Remaining', (26 - selectedStudent.cls) + ' remaining'], ['Total Fee', '₹' + (selectedStudent.tot || 0).toLocaleString()], ['Paid', '₹' + (selectedStudent.paid || 0).toLocaleString()], ['Balance', '₹' + ((selectedStudent.tot || 0) - (selectedStudent.paid || 0)).toLocaleString()], ['Face Registered', selectedStudent.faceDescriptor ? 'Yes ✅' : 'No ❌']].map(([l, v]) => (
               <View key={l} style={s.ir}><Text style={s.il}>{l}</Text><Text style={[s.iv, l === 'Classes Taken' && { color: '#2563eb', fontSize: 15 }]}>{v}</Text></View>
             ))}
-            <TouchableOpacity style={[s.btnFull, { backgroundColor: '#ef4444', marginTop: 16 }]} onPress={() => { Alert.alert('Delete?', '', [{ text: 'Cancel' }, { text: 'Delete', onPress: () => { deleteStudent(selectedStudent.id); setSelectedStudent(null); } }]); }}>
+            <TouchableOpacity style={[s.btnFull, { backgroundColor: '#2563eb', marginTop: 16 }]} onPress={() => { setUpdatingPhotoFor(selectedStudent.id); setShowFaceCapture(true); }}>
+              <Text style={s.btnFullT}>📷 {selectedStudent.faceImage ? 'Retake Photo' : 'Add Photo'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.btnFull, { backgroundColor: '#ef4444', marginTop: 8 }]} onPress={() => { Alert.alert('Delete?', '', [{ text: 'Cancel' }, { text: 'Delete', onPress: () => { deleteStudent(selectedStudent.id); setSelectedStudent(null); } }]); }}>
               <Text style={s.btnFullT}>🗑 Delete Student</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[s.btnFull, { backgroundColor: '#64748b', marginTop: 8 }]} onPress={() => setSelectedStudent(null)}>
@@ -542,14 +546,26 @@ export default function SchoolScreen() {
       <FaceScanModal
         visible={showFaceCapture}
         mode="capture"
-        onCapture={(res) => {
-          // res may be { descriptor, photo } from new modal, or raw array from legacy
-          if (res && typeof res === 'object' && !Array.isArray(res)) {
-            setFaceDesc(res.descriptor || null);
-            setFacePhoto(res.photo || null);
+        onCapture={async (res) => {
+          const norm = (res && typeof res === 'object' && !Array.isArray(res))
+            ? { descriptor: res.descriptor || null, photo: res.photo || null }
+            : { descriptor: res, photo: null };
+          // Update existing student?
+          if (updatingPhotoFor) {
+            try {
+              await updateStudentPhoto(updatingPhotoFor, norm);
+              Alert.alert('Updated ✅', 'Student photo updated successfully.');
+              // Refresh detail view with new image
+              const updated = students.find(s => s.id === updatingPhotoFor);
+              if (updated) setSelectedStudent({ ...updated, faceImage: norm.photo || updated.faceImage, faceDescriptor: norm.descriptor || updated.faceDescriptor });
+            } catch (e) {
+              Alert.alert('Error', 'Failed to update photo: ' + (e?.message || 'unknown'));
+            }
+            setUpdatingPhotoFor(null);
           } else {
-            setFaceDesc(res);
-            setFacePhoto(null);
+            // New-student flow — stash for handleAdd
+            setFaceDesc(norm.descriptor);
+            setFacePhoto(norm.photo);
           }
           setShowFaceCapture(false);
         }}

@@ -120,8 +120,30 @@ export const DataProvider = ({ children, schoolId }) => {
     try { await updateDoc(doc(db, 'driving_school_students', id), { faceDescriptor }); }
     catch { setStudents(p => p.map(x => x.id === id ? { ...x, faceDescriptor } : x)); }
   };
+  // Update both face descriptor and image for an existing student
+  const updateStudentPhoto = async (id, { descriptor, photo }) => {
+    const patch = {};
+    if (descriptor) patch.faceDescriptor = descriptor;
+    if (photo) patch.faceImage = photo;
+    if (!Object.keys(patch).length) return;
+    try {
+      await updateDoc(doc(db, 'driving_school_students', id), patch);
+    } catch (e1) {
+      // If too big (photo), retry with descriptor only
+      if (patch.faceImage && patch.faceDescriptor) {
+        try {
+          await updateDoc(doc(db, 'driving_school_students', id), { faceDescriptor: patch.faceDescriptor });
+        } catch (e2) {
+          console.warn('updateStudentPhoto failed:', e2?.message || e2);
+          throw e2;
+        }
+      } else {
+        throw e1;
+      }
+    }
+  };
   return (
-    <DataContext.Provider value={{ students, payments, loading, addStudent, updateStudentFace, markClass, collectPayment, deleteStudent }}>
+    <DataContext.Provider value={{ students, payments, loading, addStudent, updateStudentFace, updateStudentPhoto, markClass, collectPayment, deleteStudent }}>
       {children}
     </DataContext.Provider>
   );

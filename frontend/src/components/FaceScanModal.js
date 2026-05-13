@@ -99,25 +99,27 @@ export default function FaceScanModal({
       try {
         if (cameraRef.current?.takePictureAsync) {
           const pic = await cameraRef.current.takePictureAsync({
-            quality: 0.15,             // heavy JPEG compression
+            quality: 0.1,              // very heavy JPEG compression
             base64: true,
             skipProcessing: true,
-            pictureSize: '480x640',    // hint to use small resolution
           });
           if (pic?.base64) {
-            // Hard cap: drop photo if it would exceed Firestore doc budget
-            // 700 KB base64 ≈ 525 KB binary — safe with descriptor + other fields
             const sizeKB = pic.base64.length / 1024;
-            console.log('Captured photo base64 size:', Math.round(sizeKB), 'KB');
+            console.log('[FaceScan] Captured photo base64 size:', Math.round(sizeKB), 'KB');
+            // Hard cap: drop photo if it would exceed Firestore doc budget
             if (sizeKB <= 700) {
               photo = 'data:image/jpeg;base64,' + pic.base64;
             } else {
-              console.warn('Photo too large (' + Math.round(sizeKB) + ' KB) — skipping');
+              console.warn('[FaceScan] Photo too large (' + Math.round(sizeKB) + ' KB) — skipping');
             }
+          } else {
+            console.warn('[FaceScan] takePictureAsync returned no base64');
           }
+        } else {
+          console.warn('[FaceScan] cameraRef.takePictureAsync not available');
         }
       } catch (e) {
-        console.warn('Photo capture failed:', e?.message || e);
+        console.warn('[FaceScan] Photo capture failed:', e?.message || e);
       }
       setDone(true);
       setBusy(false);
