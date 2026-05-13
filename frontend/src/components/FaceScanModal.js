@@ -12,22 +12,53 @@ import {
 import { Camera } from 'expo-camera';
 import * as FaceDetector from 'expo-face-detector';
 
+// Build a much more discriminative descriptor from facial landmarks.
+// Combines normalized positions + geometric ratios (distances, angles) that
+// differ between people more than raw positions do.
 const extractDescriptor = (face) => {
-  const { bounds } = face;
+  const { bounds, leftEyePosition: lE, rightEyePosition: rE,
+          noseBasePosition: nB, leftMouthPosition: lM, rightMouthPosition: rM,
+          leftCheekPosition: lC, rightCheekPosition: rC,
+          bottomMouthPosition: bM } = face;
   if (!bounds) return null;
-  const ox = bounds.origin.x;
-  const oy = bounds.origin.y;
+  const ox = bounds.origin.x, oy = bounds.origin.y;
   const w = bounds.size.width || 1;
   const h = bounds.size.height || 1;
-  const n = (pt) => pt ? [(pt.x - ox) / w, (pt.y - oy) / h] : [0.5, 0.5];
+  // Need at least the major landmarks to build a usable descriptor
+  if (!lE || !rE || !nB || !lM || !rM) return null;
+
+  const norm = (pt) => pt ? [(pt.x - ox) / w, (pt.y - oy) / h] : [0.5, 0.5];
+  const dist = (a, b) => a && b ? Math.sqrt(((a.x - b.x) / w) ** 2 + ((a.y - b.y) / h) ** 2) : 0;
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+  const eyeMid = mid(lE, rE);
+  const mouthMid = mid(lM, rM);
+
+  // Geometric features (the discriminative part)
+  const eyeDist     = dist(lE, rE);                           // inter-eye distance
+  const mouthWidth  = dist(lM, rM);                            // mouth width
+  const noseToEye   = dist(nB, eyeMid);                       // nose vertical position
+  const noseToMouth = dist(nB, mouthMid);                     // nose to mouth distance
+  const cheekDist   = lC && rC ? dist(lC, rC) : eyeDist * 1.3;
+  const faceAspect  = h / w;
+  // Ratios — most discriminative because they're scale-invariant
+  const r1 = eyeDist / mouthWidth;
+  const r2 = noseToEye / noseToMouth;
+  const r3 = mouthWidth / cheekDist;
+  const r4 = eyeDist / cheekDist;
+  // Vertical offsets (how high/low each feature sits in the face box)
+  const eyeY  = (eyeMid.y - oy) / h;
+  const noseY = (nB.y - oy) / h;
+  const mouthY = (mouthMid.y - oy) / h;
+
   return [
-    ...n(face.leftEyePosition),
-    ...n(face.rightEyePosition),
-    ...n(face.noseBasePosition),
-    ...n(face.leftMouthPosition),
-    ...n(face.rightMouthPosition),
-    ...n(face.leftCheekPosition),
-    ...n(face.rightCheekPosition),
+    ...norm(lE), ...norm(rE), ...norm(nB),
+    ...norm(lM), ...norm(rM),
+    ...norm(lC || eyeMid), ...norm(rC || eyeMid),
+    ...norm(bM || mouthMid),
+    eyeDist, mouthWidth, noseToEye, noseToMouth, cheekDist, faceAspect,
+    r1, r2, r3, r4,
+    eyeY, noseY, mouthY,
   ];
 };
 
@@ -36,7 +67,10 @@ const faceDist = (a, b) => {
   return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0));
 };
 
-const THRESHOLD = 0.55;
+// Stricter threshold — with the richer descriptor above, distances between
+// the same person stay small (~0.05-0.15) while different people typically
+// land at 0.25+. 0.20 gives a reasonable safety margin.
+const THRESHOLD = 0.20;
 
 export default function FaceScanModal({
   visible,
@@ -130,10 +164,19 @@ export default function FaceScanModal({
     } else {
       let best = null;
       let minDist = Infinity;
+      let usableCount = 0;
+      let staleCount = 0;
 
       students.forEach((st) => {
         if (st.faceDescriptor?.length) {
+          // Old short descriptors (14 values) are incompatible with new format
+          if (st.faceDescriptor.length !== desc.length) {
+            staleCount++;
+            return;
+          }
+          usableCount++;
           const d = faceDist(desc, st.faceDescriptor);
+          console.log('[FaceScan] dist to', st.name, '=', d.toFixed(3));
           if (d < minDist) {
             minDist = d;
             best = st;
@@ -141,17 +184,22 @@ export default function FaceScanModal({
         }
       });
 
+      console.log('[FaceScan] best=', best?.name, 'minDist=', minDist.toFixed(3), 'threshold=', THRESHOLD);
+
       if (best && minDist < THRESHOLD) {
         setMatchedStudent(best);
         setBusy(false);
       } else {
-        const noFaces = students.filter((s) => s.faceDescriptor?.length).length === 0;
-        Alert.alert(
-          'Not Recognized',
-          noFaces
-            ? 'No students have a face registered.'
-            : 'Face not recognized. Try again with better lighting.'
-        );
+        const noFaces = usableCount === 0;
+        let msg;
+        if (noFaces && staleCount > 0) {
+          msg = staleCount + ' student(s) have old face data — owner needs to re-capture their photos using "Retake Photo" in the Owner app.';
+        } else if (noFaces) {
+          msg = 'No students have a face registered.';
+        } else {
+          msg = 'Face not recognized. Try again with better lighting, or owner can re-capture this student\'s photo.';
+        }
+        Alert.alert('Not Recognized', msg);
         setBusy(false);
       }
     }
