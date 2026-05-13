@@ -12,41 +12,54 @@ import {
 import { Camera } from 'expo-camera';
 import * as FaceDetector from 'expo-face-detector';
 
-// Build a much more discriminative descriptor from facial landmarks.
-// Combines normalized positions + geometric ratios (distances, angles) that
-// differ between people more than raw positions do.
+// Build a discriminative descriptor from facial landmarks.
+// Requires eyes + nose. Falls back to estimated positions for mouth/cheeks
+// when not detected, so the descriptor is generated more often.
 const extractDescriptor = (face) => {
   const { bounds, leftEyePosition: lE, rightEyePosition: rE,
-          noseBasePosition: nB, leftMouthPosition: lM, rightMouthPosition: rM,
-          leftCheekPosition: lC, rightCheekPosition: rC,
-          bottomMouthPosition: bM } = face;
+          noseBasePosition: nB, leftMouthPosition: lMin, rightMouthPosition: rMin,
+          leftCheekPosition: lCin, rightCheekPosition: rCin,
+          bottomMouthPosition: bMin } = face;
   if (!bounds) return null;
   const ox = bounds.origin.x, oy = bounds.origin.y;
   const w = bounds.size.width || 1;
   const h = bounds.size.height || 1;
-  // Need at least the major landmarks to build a usable descriptor
-  if (!lE || !rE || !nB || !lM || !rM) return null;
+  // Need at least the core landmarks (eyes + nose). Mouth/cheeks can be
+  // estimated from the bounding box + eye line.
+  if (!lE || !rE || !nB) {
+    console.log('[FaceScan] missing core landmarks — descriptor null');
+    return null;
+  }
 
-  const norm = (pt) => pt ? [(pt.x - ox) / w, (pt.y - oy) / h] : [0.5, 0.5];
-  const dist = (a, b) => a && b ? Math.sqrt(((a.x - b.x) / w) ** 2 + ((a.y - b.y) / h) ** 2) : 0;
+  // Estimate missing landmarks geometrically from what we have
+  const eyeMidX = (lE.x + rE.x) / 2;
+  const eyeMidY = (lE.y + rE.y) / 2;
+  const eyeSpan = Math.abs(rE.x - lE.x) || w * 0.3;
+
+  const lM = lMin || { x: nB.x - eyeSpan * 0.4, y: nB.y + h * 0.15 };
+  const rM = rMin || { x: nB.x + eyeSpan * 0.4, y: nB.y + h * 0.15 };
+  const bM = bMin || { x: (lM.x + rM.x) / 2, y: nB.y + h * 0.22 };
+  const lC = lCin || { x: lE.x - eyeSpan * 0.3, y: nB.y };
+  const rC = rCin || { x: rE.x + eyeSpan * 0.3, y: nB.y };
+
+  const norm = (pt) => [(pt.x - ox) / w, (pt.y - oy) / h];
+  const distNorm = (a, b) => Math.sqrt(((a.x - b.x) / w) ** 2 + ((a.y - b.y) / h) ** 2);
   const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
-  const eyeMid = mid(lE, rE);
+  const eyeMid = { x: eyeMidX, y: eyeMidY };
   const mouthMid = mid(lM, rM);
 
-  // Geometric features (the discriminative part)
-  const eyeDist     = dist(lE, rE);                           // inter-eye distance
-  const mouthWidth  = dist(lM, rM);                            // mouth width
-  const noseToEye   = dist(nB, eyeMid);                       // nose vertical position
-  const noseToMouth = dist(nB, mouthMid);                     // nose to mouth distance
-  const cheekDist   = lC && rC ? dist(lC, rC) : eyeDist * 1.3;
+  const eyeDist     = distNorm(lE, rE);
+  const mouthWidth  = distNorm(lM, rM);
+  const noseToEye   = distNorm(nB, eyeMid);
+  const noseToMouth = distNorm(nB, mouthMid);
+  const cheekDist   = distNorm(lC, rC);
   const faceAspect  = h / w;
   // Ratios — most discriminative because they're scale-invariant
-  const r1 = eyeDist / mouthWidth;
-  const r2 = noseToEye / noseToMouth;
-  const r3 = mouthWidth / cheekDist;
-  const r4 = eyeDist / cheekDist;
-  // Vertical offsets (how high/low each feature sits in the face box)
+  const r1 = mouthWidth > 0 ? eyeDist / mouthWidth : 1;
+  const r2 = noseToMouth > 0 ? noseToEye / noseToMouth : 1;
+  const r3 = cheekDist > 0 ? mouthWidth / cheekDist : 1;
+  const r4 = cheekDist > 0 ? eyeDist / cheekDist : 1;
   const eyeY  = (eyeMid.y - oy) / h;
   const noseY = (nB.y - oy) / h;
   const mouthY = (mouthMid.y - oy) / h;
@@ -54,8 +67,8 @@ const extractDescriptor = (face) => {
   return [
     ...norm(lE), ...norm(rE), ...norm(nB),
     ...norm(lM), ...norm(rM),
-    ...norm(lC || eyeMid), ...norm(rC || eyeMid),
-    ...norm(bM || mouthMid),
+    ...norm(lC), ...norm(rC),
+    ...norm(bM),
     eyeDist, mouthWidth, noseToEye, noseToMouth, cheekDist, faceAspect,
     r1, r2, r3, r4,
     eyeY, noseY, mouthY,
@@ -121,7 +134,10 @@ export default function FaceScanModal({
 
     const desc = lastDesc.current;
     if (!desc) {
-      Alert.alert('Error', 'Face not detected. Please try again.');
+      Alert.alert(
+        'Try Again',
+        'Face landmarks not clear. Please:\n• Look directly at the camera\n• Move face into center\n• Improve lighting\n• Keep face fully visible'
+      );
       return;
     }
 
@@ -282,10 +298,10 @@ export default function FaceScanModal({
           type={Camera.Constants?.Type?.front ?? 'front'}
           onFacesDetected={onFacesDetected}
           faceDetectorSettings={{
-            mode: FaceDetector.FaceDetectorMode.fast,
+            mode: FaceDetector.FaceDetectorMode.accurate,
             detectLandmarks: FaceDetector.FaceDetectorLandmarks.all,
             runClassifications: FaceDetector.FaceDetectorClassifications.none,
-            minDetectionInterval: 250,
+            minDetectionInterval: 200,
             tracking: true,
           }}
         >
@@ -311,10 +327,28 @@ export default function FaceScanModal({
               {faces.length > 1
                 ? 'Multiple faces detected'
                 : faces.length === 1
-                ? 'Face detected ✓'
-                : 'Position face in front of camera'}
+                ? 'Face detected ✓ — Hold still'
+                : 'Position face inside the circle'}
             </Text>
           </View>
+
+          {/* Face positioning circle overlay */}
+          {!matchedStudent && !done && (
+            <View pointerEvents="none" style={ss.frameWrap}>
+              <View style={[ss.frameCircle, {
+                borderColor:
+                  faces.length === 1 ? '#10b981' :
+                  faces.length > 1 ? '#f97316' : 'rgba(255,255,255,0.85)',
+              }]} />
+              <Text style={ss.frameHint}>
+                {faces.length === 1
+                  ? '✓ Hold still — press the button below'
+                  : faces.length > 1
+                  ? '⚠ Only one face please'
+                  : 'Align your face inside the circle'}
+              </Text>
+            </View>
+          )}
 
           {/* Matched student confirmation overlay */}
           {matchedStudent && (
@@ -386,6 +420,23 @@ const ss = StyleSheet.create({
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     padding: 24, paddingBottom: 50, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center',
+  },
+  frameWrap: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  frameCircle: {
+    width: 280, height: 360, borderRadius: 180,
+    borderWidth: 4, borderStyle: 'dashed',
+    backgroundColor: 'transparent',
+  },
+  frameHint: {
+    color: '#fff', fontSize: 13, fontWeight: '700',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99,
+    marginTop: 24,
+    overflow: 'hidden',
+    textAlign: 'center',
   },
   captureBtn: {
     width: 84, height: 84, borderRadius: 42, backgroundColor: '#2563eb',
