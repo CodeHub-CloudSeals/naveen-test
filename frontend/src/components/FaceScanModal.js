@@ -12,41 +12,41 @@ import {
 import { Camera } from 'expo-camera';
 import * as FaceDetector from 'expo-face-detector';
 
-// Build a discriminative descriptor from facial landmarks.
-// Requires eyes + nose. Falls back to estimated positions for mouth/cheeks
-// when not detected, so the descriptor is generated more often.
+// Build a descriptor from facial landmarks. Lenient — works even if some
+// landmarks are missing by falling back to estimated positions based on
+// average face proportions. Always returns a descriptor as long as
+// face.bounds is present.
 const extractDescriptor = (face) => {
-  const { bounds, leftEyePosition: lE, rightEyePosition: rE,
-          noseBasePosition: nB, leftMouthPosition: lMin, rightMouthPosition: rMin,
-          leftCheekPosition: lCin, rightCheekPosition: rCin,
-          bottomMouthPosition: bMin } = face;
-  if (!bounds) return null;
-  const ox = bounds.origin.x, oy = bounds.origin.y;
-  const w = bounds.size.width || 1;
-  const h = bounds.size.height || 1;
-  // Need at least the core landmarks (eyes + nose). Mouth/cheeks can be
-  // estimated from the bounding box + eye line.
-  if (!lE || !rE || !nB) {
-    console.log('[FaceScan] missing core landmarks — descriptor null');
-    return null;
-  }
+  if (!face) return null;
+  const { bounds } = face;
+  // Be tolerant of partially-formed bounds objects — the native detector
+  // occasionally emits a face with only origin OR only size. Fill the gaps
+  // with safe defaults so we can still build a (lower-quality but valid)
+  // descriptor instead of bailing out with null.
+  const origin = (bounds && bounds.origin) || { x: 0, y: 0 };
+  const size = (bounds && bounds.size) || { width: 1, height: 1 };
+  const ox = typeof origin.x === 'number' ? origin.x : 0;
+  const oy = typeof origin.y === 'number' ? origin.y : 0;
+  const w = (typeof size.width === 'number' && size.width > 0) ? size.width : 1;
+  const h = (typeof size.height === 'number' && size.height > 0) ? size.height : 1;
+  const cx = ox + w / 2;
+  const cy = oy + h / 2;
 
-  // Estimate missing landmarks geometrically from what we have
-  const eyeMidX = (lE.x + rE.x) / 2;
-  const eyeMidY = (lE.y + rE.y) / 2;
-  const eyeSpan = Math.abs(rE.x - lE.x) || w * 0.3;
-
-  const lM = lMin || { x: nB.x - eyeSpan * 0.4, y: nB.y + h * 0.15 };
-  const rM = rMin || { x: nB.x + eyeSpan * 0.4, y: nB.y + h * 0.15 };
-  const bM = bMin || { x: (lM.x + rM.x) / 2, y: nB.y + h * 0.22 };
-  const lC = lCin || { x: lE.x - eyeSpan * 0.3, y: nB.y };
-  const rC = rCin || { x: rE.x + eyeSpan * 0.3, y: nB.y };
+  // Use whatever landmarks are present; estimate missing ones from face center
+  const lE = face.leftEyePosition       || { x: cx - w * 0.20, y: cy - h * 0.15 };
+  const rE = face.rightEyePosition      || { x: cx + w * 0.20, y: cy - h * 0.15 };
+  const nB = face.noseBasePosition      || { x: cx,            y: cy };
+  const lM = face.leftMouthPosition     || { x: cx - w * 0.15, y: cy + h * 0.20 };
+  const rM = face.rightMouthPosition    || { x: cx + w * 0.15, y: cy + h * 0.20 };
+  const lC = face.leftCheekPosition     || { x: cx - w * 0.30, y: cy };
+  const rC = face.rightCheekPosition    || { x: cx + w * 0.30, y: cy };
+  const bM = face.bottomMouthPosition   || { x: cx,            y: cy + h * 0.27 };
 
   const norm = (pt) => [(pt.x - ox) / w, (pt.y - oy) / h];
   const distNorm = (a, b) => Math.sqrt(((a.x - b.x) / w) ** 2 + ((a.y - b.y) / h) ** 2);
   const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
-  const eyeMid = { x: eyeMidX, y: eyeMidY };
+  const eyeMid = mid(lE, rE);
   const mouthMid = mid(lM, rM);
 
   const eyeDist     = distNorm(lE, rE);
@@ -55,7 +55,6 @@ const extractDescriptor = (face) => {
   const noseToMouth = distNorm(nB, mouthMid);
   const cheekDist   = distNorm(lC, rC);
   const faceAspect  = h / w;
-  // Ratios — most discriminative because they're scale-invariant
   const r1 = mouthWidth > 0 ? eyeDist / mouthWidth : 1;
   const r2 = noseToMouth > 0 ? noseToEye / noseToMouth : 1;
   const r3 = cheekDist > 0 ? mouthWidth / cheekDist : 1;
@@ -63,6 +62,9 @@ const extractDescriptor = (face) => {
   const eyeY  = (eyeMid.y - oy) / h;
   const noseY = (nB.y - oy) / h;
   const mouthY = (mouthMid.y - oy) / h;
+  // Face orientation angles (always returned by detector, no landmark dependency)
+  const yaw = (face.yawAngle || 0) / 90;
+  const roll = (face.rollAngle || 0) / 90;
 
   return [
     ...norm(lE), ...norm(rE), ...norm(nB),
@@ -72,6 +74,7 @@ const extractDescriptor = (face) => {
     eyeDist, mouthWidth, noseToEye, noseToMouth, cheekDist, faceAspect,
     r1, r2, r3, r4,
     eyeY, noseY, mouthY,
+    yaw, roll,
   ];
 };
 
@@ -117,7 +120,15 @@ export default function FaceScanModal({
   const onFacesDetected = ({ faces: detectedFaces }) => {
     const det = detectedFaces || [];
     setFaces(det);
-    if (det.length > 0) lastDesc.current = extractDescriptor(det[0]);
+    if (det.length > 0) {
+      // Only commit a new descriptor when extraction actually succeeds.
+      // Previously we overwrote with null on any bad frame, which made the
+      // button press race against the next detector tick — the user would
+      // see "Face detected ✓" yet get "Face landmarks not clear" because
+      // the very last frame happened to be a dud. Keep the last good value.
+      const d = extractDescriptor(det[0]);
+      if (d) lastDesc.current = d;
+    }
   };
 
   const handleAction = async () => {
@@ -132,7 +143,14 @@ export default function FaceScanModal({
       return;
     }
 
-    const desc = lastDesc.current;
+    // Prefer the cached descriptor from the latest good frame, but if it's
+    // missing for any reason fall back to extracting one right now from the
+    // face we already know is in view.
+    let desc = lastDesc.current;
+    if (!desc && faces[0]) {
+      desc = extractDescriptor(faces[0]);
+      if (desc) lastDesc.current = desc;
+    }
     if (!desc) {
       Alert.alert(
         'Try Again',
@@ -163,6 +181,9 @@ export default function FaceScanModal({
           'Already Registered',
           `This face is already registered as:\n\n${dupStudent.name}\n📱 ${dupStudent.phone}\n\nCannot add the same person twice.`
         );
+        // Clear stale descriptor so user can position differently and retry
+        lastDesc.current = null;
+        setFaces([]);
         setBusy(false);
         return;
       }
@@ -173,7 +194,7 @@ export default function FaceScanModal({
       try {
         if (cameraRef.current?.takePictureAsync) {
           const pic = await cameraRef.current.takePictureAsync({
-            quality: 0.1,              // very heavy JPEG compression
+            quality: 0.4,              // higher quality for clearer face recognition
             base64: true,
             skipProcessing: true,
           });
@@ -181,7 +202,7 @@ export default function FaceScanModal({
             const sizeKB = pic.base64.length / 1024;
             console.log('[FaceScan] Captured photo base64 size:', Math.round(sizeKB), 'KB');
             // Hard cap: drop photo if it would exceed Firestore doc budget
-            if (sizeKB <= 700) {
+            if (sizeKB <= 850) {
               photo = 'data:image/jpeg;base64,' + pic.base64;
             } else {
               console.warn('[FaceScan] Photo too large (' + Math.round(sizeKB) + ' KB) — skipping');
@@ -240,6 +261,9 @@ export default function FaceScanModal({
           msg = 'Face not recognized. Try again with better lighting, or owner can re-capture this student\'s photo.';
         }
         Alert.alert('Not Recognized', msg);
+        // Clear stale descriptor so a fresh scan can start cleanly
+        lastDesc.current = null;
+        setFaces([]);
         setBusy(false);
       }
     }
@@ -329,6 +353,13 @@ export default function FaceScanModal({
                 : faces.length === 1
                 ? 'Face detected ✓ — Hold still'
                 : 'Position face inside the circle'}
+            </Text>
+          </View>
+
+          {/* Instruction banner — important guidance for clear scan */}
+          <View style={ss.instructionBanner}>
+            <Text style={ss.instructionText}>
+              👓 Remove glasses / mask{'\n'}💡 Good lighting · Look at camera
             </Text>
           </View>
 

@@ -101,10 +101,16 @@ export default function SchoolScreen() {
     }
   };
 
-  const handleFaceScanMatch = (student) => {
-    markClass(student.id);
+  const handleFaceScanMatch = async (student) => {
     setShowFaceScan(false);
-    Alert.alert('Attendance Marked! ✅', `${student.name}\nClass ${student.cls + 1} / 26 marked`);
+    const res = await markClass(student.id);
+    if (res?.ok) {
+      Alert.alert('Attendance Marked! ✅', `${student.name}\nClass ${res.newCls} / ${TC} marked`);
+    } else if (res?.reason === 'completed') {
+      Alert.alert('Already Completed', `${student.name} has already finished all ${TC} classes.`);
+    } else {
+      Alert.alert('Could Not Mark', 'Student record not found. Please try again.');
+    }
   };
 
   const handleAddDriver = async () => {

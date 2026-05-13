@@ -55,11 +55,22 @@ export const DataProvider = ({ children, schoolId }) => {
       }
     }
   };
+  // Returns a structured result so callers can distinguish:
+  //   { ok: true,  newCls }            — class was marked
+  //   { ok: false, reason: 'not-found' | 'completed' }
   const markClass = async (id) => {
     const s = students.find(x => x.id === id);
-    if (!s || s.cls >= 26) return;
-    try { await updateDoc(doc(db, 'driving_school_students', id), { cls: s.cls + 1 }); }
-    catch { setStudents(p => p.map(x => x.id === id ? { ...x, cls: x.cls + 1 } : x)); }
+    if (!s) return { ok: false, reason: 'not-found' };
+    if (s.cls >= 26) return { ok: false, reason: 'completed' };
+    const newCls = s.cls + 1;
+    try {
+      await updateDoc(doc(db, 'driving_school_students', id), { cls: newCls });
+    } catch {
+      // Offline fallback — optimistically update local state; the Firestore
+      // listener will reconcile when the network returns.
+      setStudents(p => p.map(x => x.id === id ? { ...x, cls: newCls } : x));
+    }
+    return { ok: true, newCls };
   };
   const collectPayment = async (id, amount, collector = null) => {
     const s = students.find(x => x.id === id);
